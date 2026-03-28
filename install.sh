@@ -41,7 +41,11 @@ fi
 mkdir -p "$HOME/.cache/claude-proxy-guard"
 chmod 700 "$HOME/.cache/claude-proxy-guard"
 
+# Show version
+VERSION="unknown"
+[[ -f "$SCRIPT_DIR/VERSION" ]] && VERSION=$(cat "$SCRIPT_DIR/VERSION" | tr -d '[:space:]')
+
 echo ""
-echo "Installation complete!"
+echo "Claude Proxy Guard v$VERSION installed!"
 echo "Open a new terminal or run: source ~/.zshrc"
 echo "Then run: claude --guard-status"

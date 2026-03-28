@@ -147,8 +147,16 @@ DOMAIN,myip.ipip.net,DIRECT
 | `claude` | 正常启动，带代理验证 + 确认 |
 | `claude --guard-status` | 仅查看状态，不启动 |
 | `claude --guard-reset` | 重新配置 |
+| `claude --guard-update` | 检查并更新到最新版本 |
+| `claude --guard-version` | 显示当前版本 |
 
 其他参数原样传递给真实 `claude` 二进制。
+
+每次启动时自动检查更新（每 24 小时最多一次，1 秒超时，不影响启动速度）。有新版本时提示：
+```
+[Proxy Guard] 新版本可用: v1.2.0 (当前 v1.1.0)
+[Proxy Guard] 运行 claude --guard-update 更新
+```
 
 ### 缓存
 
@@ -302,8 +310,16 @@ DOMAIN,myip.ipip.net,DIRECT
 | `claude` | Launch with proxy verification + confirmation |
 | `claude --guard-status` | Show status only |
 | `claude --guard-reset` | Reconfigure |
+| `claude --guard-update` | Check and update to latest version |
+| `claude --guard-version` | Show current version |
 
 All other arguments pass through to the real `claude` binary.
+
+Auto-checks for updates once every 24 hours (1s timeout, non-blocking). When a new version is available:
+```
+[Proxy Guard] New version available: v1.2.0 (current v1.1.0)
+[Proxy Guard] Run claude --guard-update to update
+```
 
 ### Cache
 

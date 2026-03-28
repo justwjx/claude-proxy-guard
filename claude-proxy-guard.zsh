@@ -1,6 +1,99 @@
 #!/usr/bin/env zsh
-# Claude Proxy Guard v1.1
+# Claude Proxy Guard
 # Verifies proxy is active and Claude traffic exits from expected country
+
+_CPG_VERSION="1.1.0"
+_CPG_REPO="justwjx/claude-proxy-guard"
+_CPG_RAW_URL="https://raw.githubusercontent.com/$_CPG_REPO/master"
+
+# ============================================================================
+# Version + Update
+# ============================================================================
+
+_cpg_show_version() {
+  echo "Claude Proxy Guard v$_CPG_VERSION"
+  echo "https://github.com/$_CPG_REPO"
+}
+
+_cpg_check_update() {
+  # Check at most once per 24h
+  local check_file="$HOME/.cache/claude-proxy-guard/last_update_check"
+  mkdir -p "$HOME/.cache/claude-proxy-guard"
+
+  if [[ -f "$check_file" ]]; then
+    local last_check=$(cat "$check_file")
+    local now=$(date +%s)
+    local age=$(( now - ${last_check:-0} ))
+    (( age < 86400 )) && return 0
+  fi
+
+  # Record check time regardless of result
+  date +%s > "$check_file"
+
+  # Fetch remote version (1s timeout, silent fail)
+  local remote_version
+  remote_version=$(curl -s --connect-timeout 1 "$_CPG_RAW_URL/VERSION" 2>/dev/null | tr -d '[:space:]')
+  [[ -z "$remote_version" ]] && return 0
+  # Validate version format (x.y.z)
+  [[ ! "$remote_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && return 0
+
+  if [[ "$remote_version" != "$_CPG_VERSION" ]]; then
+    echo "[Proxy Guard] 新版本可用: v$remote_version (当前 v$_CPG_VERSION)"
+    echo "[Proxy Guard] 运行 claude --guard-update 更新"
+    echo ""
+  fi
+}
+
+_cpg_do_update() {
+  echo "[Proxy Guard] 检查更新..."
+
+  # Find install directory
+  local install_dir=""
+  for dir in "$HOME/projects/claude-proxy-guard" "$HOME/claude-proxy-guard"; do
+    [[ -d "$dir/.git" ]] && install_dir="$dir" && break
+  done
+
+  if [[ -z "$install_dir" ]]; then
+    echo "[Proxy Guard] 未找到安装目录，请手动更新："
+    echo "  git clone https://github.com/$_CPG_REPO.git"
+    echo "  cd claude-proxy-guard && ./install.sh"
+    return 1
+  fi
+
+  echo "[Proxy Guard] 安装目录: $install_dir"
+
+  # Fetch and check remote version
+  local remote_version
+  remote_version=$(curl -s --connect-timeout 5 "$_CPG_RAW_URL/VERSION" 2>/dev/null | tr -d '[:space:]')
+
+  if [[ -z "$remote_version" ]] || [[ ! "$remote_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "[Proxy Guard] 无法获取远程版本号"
+    return 1
+  fi
+
+  if [[ "$remote_version" == "$_CPG_VERSION" ]]; then
+    echo "[Proxy Guard] 已是最新版本 v$_CPG_VERSION"
+    return 0
+  fi
+
+  echo "[Proxy Guard] v$_CPG_VERSION → v$remote_version"
+
+  # Pull and reinstall
+  (
+    cd "$install_dir" &&
+    git pull origin master &&
+    ./install.sh
+  )
+
+  if [[ $? -eq 0 ]]; then
+    echo ""
+    echo "[Proxy Guard] 更新完成！请重新打开终端或运行: source ~/.zshrc"
+  else
+    echo "[Proxy Guard] 更新失败，请手动更新："
+    echo "  cd $install_dir && git pull && ./install.sh"
+    return 1
+  fi
+}
 
 # ============================================================================
 # Config Loading + First-Run Setup
@@ -269,7 +362,7 @@ EOF
 _cpg_user_confirm() {
   local confirm
   echo ""
-  echo "[Proxy Guard] 提示: --guard-status 查看状态 | --guard-reset 重新配置"
+  echo "[Proxy Guard] 提示: --guard-status 状态 | --guard-reset 配置 | --guard-update 更新 | --guard-version 版本"
   read "confirm?[Proxy Guard] Enter 继续 / n 重新检测 / q 退出: "
   case "$confirm" in
     n|N) return 1 ;;   # re-check
@@ -610,7 +703,7 @@ _cpg_run_checks() {
   # Verification failed: block, but show hints
   if [[ $check_passed -ne 0 ]]; then
     echo ""
-    echo "[Proxy Guard] 提示: --guard-status 查看状态 | --guard-reset 重新配置"
+    echo "[Proxy Guard] 提示: --guard-status 状态 | --guard-reset 配置 | --guard-update 更新 | --guard-version 版本"
     return 1
   fi
 
@@ -647,7 +740,18 @@ claude() {
       _cpg_run_checks --status
       return $?
       ;;
+    --guard-update)
+      _cpg_do_update
+      return $?
+      ;;
+    --guard-version)
+      _cpg_show_version
+      return 0
+      ;;
   esac
+
+  # Auto update check (silent, at most once per 24h)
+  _cpg_check_update
 
   _cpg_run_checks || return 1
 
