@@ -44,34 +44,69 @@ cd claude-proxy-guard
 
 ### 代理规则配置
 
-需要在代理中添加一条 DIRECT 规则来显示国内出口 IP。不添加也能正常使用，只是看不到国内 IP。
+需要在代理中配置 Claude 相关域名的路由规则，以及一条 DIRECT 规则来显示国内出口 IP。
 
-**Surge** — 在当前活跃配置的 `[Rule]` 段添加（放在 `FINAL` 之前）：
+#### 1. Claude 域名代理规则（必须）
+
+确保所有 Claude 相关域名走代理。将 `<策略组>` 替换为你的代理策略组名（如 `Proxy`、`Anthropic`、`日本` 等）。
+
+**Surge** — 在 `[Rule]` 段添加：
+
+```ini
+# Anthropic / Claude
+DOMAIN-SUFFIX,anthropic.com,<策略组>
+DOMAIN-SUFFIX,claude.ai,<策略组>
+DOMAIN-SUFFIX,claude.com,<策略组>
+DOMAIN-SUFFIX,claudeusercontent.com,<策略组>
+DOMAIN-SUFFIX,clau.de,<策略组>
+```
+
+**Clash Verge** — 在 `rules` 中添加：
+
+```yaml
+# Anthropic / Claude
+- DOMAIN-SUFFIX,anthropic.com,<策略组>
+- DOMAIN-SUFFIX,claude.ai,<策略组>
+- DOMAIN-SUFFIX,claude.com,<策略组>
+- DOMAIN-SUFFIX,claudeusercontent.com,<策略组>
+- DOMAIN-SUFFIX,clau.de,<策略组>
+```
+
+> 5 条 `DOMAIN-SUFFIX` 规则覆盖全部 10 个检测域名（含子域名如 `api.anthropic.com`、`platform.claude.com` 等）。
+
+#### 2. 辅助规则（推荐/可选）
+
+**Surge：**
 
 ```ini
 # Claude Proxy Guard - 国内 IP 检测
 DOMAIN,myip.ipip.net,DIRECT
 
 # [可选] 降级验证 - 将 ipinfo.io 路由到与 Claude 相同的策略组：
-# DOMAIN,ipinfo.io,Anthropic
+# DOMAIN,ipinfo.io,<策略组>
 ```
 
-**Clash Verge** — 在 `rules` 中添加（放在兜底规则之前）：
+**Clash Verge：**
 
 ```yaml
 # Claude Proxy Guard - 国内 IP 检测
 - DOMAIN,myip.ipip.net,DIRECT
 
 # [可选] 降级验证 - 将 ipinfo.io 路由到与 Claude 相同的策略组：
-# - DOMAIN,ipinfo.io,Anthropic
+# - DOMAIN,ipinfo.io,<策略组>
 ```
 
-**快速参考：**
+#### 快速参考
 
 | 规则 | 用途 | 是否必须 |
 |------|------|----------|
+| `DOMAIN-SUFFIX,anthropic.com,<策略组>` | API、MCP、官网等 | 必须 |
+| `DOMAIN-SUFFIX,claude.ai,<策略组>` | Claude Web、插件下载 | 必须 |
+| `DOMAIN-SUFFIX,claude.com,<策略组>` | 文档、OAuth | 必须 |
+| `DOMAIN-SUFFIX,claudeusercontent.com,<策略组>` | 用户内容 | 必须 |
+| `DOMAIN-SUFFIX,clau.de,<策略组>` | 短链接 | 必须 |
 | `DOMAIN,myip.ipip.net,DIRECT` | 显示国内出口 IP | 推荐 |
-| `DOMAIN,ipinfo.io,<你的Claude策略组>` | Cloudflare trace 不可用时的降级验证 | 可选 |
+| `DOMAIN,ipinfo.io,<策略组>` | 降级验证 | 可选 |
 
 ### 工作原理
 
@@ -172,26 +207,63 @@ cd claude-proxy-guard
 
 ### Proxy Rules
 
-One DIRECT rule is needed to display your domestic exit IP. Without it, the tool still works — you just won't see the domestic IP.
+You need proxy rules for Claude domains and one DIRECT rule for domestic IP display.
 
-**Surge** — Add to `[Rule]` section (before `FINAL`):
+#### 1. Claude Domain Rules (Required)
+
+Make sure all Claude-related domains go through your proxy. Replace `<policy>` with your proxy policy group name (e.g. `Proxy`, `Anthropic`, `Japan`).
+
+**Surge** — Add to `[Rule]` section:
+
+```ini
+# Anthropic / Claude
+DOMAIN-SUFFIX,anthropic.com,<policy>
+DOMAIN-SUFFIX,claude.ai,<policy>
+DOMAIN-SUFFIX,claude.com,<policy>
+DOMAIN-SUFFIX,claudeusercontent.com,<policy>
+DOMAIN-SUFFIX,clau.de,<policy>
+```
+
+**Clash Verge** — Add to `rules`:
+
+```yaml
+# Anthropic / Claude
+- DOMAIN-SUFFIX,anthropic.com,<policy>
+- DOMAIN-SUFFIX,claude.ai,<policy>
+- DOMAIN-SUFFIX,claude.com,<policy>
+- DOMAIN-SUFFIX,claudeusercontent.com,<policy>
+- DOMAIN-SUFFIX,clau.de,<policy>
+```
+
+> 5 `DOMAIN-SUFFIX` rules cover all 10 verified domains (including subdomains like `api.anthropic.com`, `platform.claude.com`, etc).
+
+#### 2. Helper Rules (Recommended/Optional)
+
+**Surge:**
 
 ```ini
 DOMAIN,myip.ipip.net,DIRECT
-# (Optional) DOMAIN,ipinfo.io,Anthropic
+# (Optional) DOMAIN,ipinfo.io,<policy>
 ```
 
-**Clash Verge** — Add to `rules` (before catch-all):
+**Clash Verge:**
 
 ```yaml
 - DOMAIN,myip.ipip.net,DIRECT
-# (Optional) - DOMAIN,ipinfo.io,Anthropic
+# (Optional) - DOMAIN,ipinfo.io,<policy>
 ```
+
+#### Quick Reference
 
 | Rule | Purpose | Required? |
 |------|---------|-----------|
+| `DOMAIN-SUFFIX,anthropic.com,<policy>` | API, MCP, website | Required |
+| `DOMAIN-SUFFIX,claude.ai,<policy>` | Claude Web, plugin downloads | Required |
+| `DOMAIN-SUFFIX,claude.com,<policy>` | Docs, OAuth | Required |
+| `DOMAIN-SUFFIX,claudeusercontent.com,<policy>` | User content | Required |
+| `DOMAIN-SUFFIX,clau.de,<policy>` | Short links | Required |
 | `DOMAIN,myip.ipip.net,DIRECT` | Show domestic exit IP | Recommended |
-| `DOMAIN,ipinfo.io,<policy>` | Fallback when Cloudflare trace unavailable | Optional |
+| `DOMAIN,ipinfo.io,<policy>` | Fallback verification | Optional |
 
 ### How It Works
 
