@@ -261,7 +261,7 @@ _cpg_verify_statsig() {
 }
 
 _cpg_verify_all_domains() {
-  rm -f "$_cpg_cache_dir"/tmp_* 2>/dev/null
+  rm -f "$_cpg_cache_dir"/tmp_*(N) 2>/dev/null
   mkdir -p "$_cpg_cache_dir"
 
   # Launch all checks in parallel
@@ -280,14 +280,14 @@ _cpg_verify_all_domains() {
     local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
     if [[ -f "$rfile" ]]; then
       local line=$(cat "$rfile")
-      local status=$(echo "$line" | cut -d'|' -f1)
+      local rstatus=$(echo "$line" | cut -d'|' -f1)
       local dname=$(echo "$line" | cut -d'|' -f2)
       local ip=$(echo "$line" | cut -d'|' -f3)
       local geo=$(echo "$line" | cut -d'|' -f4)
 
-      if [[ "$status" == "PASS" ]]; then
+      if [[ "$rstatus" == "PASS" ]]; then
         printf "  %-30s %-20s %s ✓\n" "$dname" "$ip" "$geo"
-      elif [[ "$status" != "DEFER" ]]; then
+      elif [[ "$rstatus" != "DEFER" ]]; then
         printf "  %-30s %-20s %s ✗\n" "$dname" "$ip" "$geo"
         all_pass=false
       fi
@@ -301,9 +301,9 @@ _cpg_verify_all_domains() {
   local rfile="$_cpg_cache_dir/tmp_statsigapi_net"
   if [[ -f "$rfile" ]]; then
     local line=$(cat "$rfile")
-    local status=$(echo "$line" | cut -d'|' -f1)
+    local rstatus=$(echo "$line" | cut -d'|' -f1)
     local region=$(echo "$line" | cut -d'|' -f3)
-    if [[ "$status" == "PASS" ]]; then
+    if [[ "$rstatus" == "PASS" ]]; then
       printf "  %-30s %-20s %s ✓\n" "statsigapi.net" "$region" "ok"
     else
       printf "  %-30s %-20s %s ✗\n" "statsigapi.net" "$region" "fail"
@@ -368,8 +368,8 @@ _cpg_verify_all_domains() {
       local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
       [[ ! -f "$rfile" ]] && continue
       local line=$(cat "$rfile")
-      local status=$(echo "$line" | cut -d'|' -f1)
-      if [[ "$status" == "FAIL" ]]; then
+      local rstatus=$(echo "$line" | cut -d'|' -f1)
+      if [[ "$rstatus" == "FAIL" ]]; then
         local geo=$(echo "$line" | cut -d'|' -f4)
         failures="$failures\n  $domain → $geo (期望 $EXPECTED_COUNTRY)"
       fi
@@ -377,7 +377,7 @@ _cpg_verify_all_domains() {
   fi
 
   # Clean up tmp files
-  rm -f "$_cpg_cache_dir"/tmp_* 2>/dev/null
+  rm -f "$_cpg_cache_dir"/tmp_*(N) 2>/dev/null
 
   if $all_pass; then
     return 0
