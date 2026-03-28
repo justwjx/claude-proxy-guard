@@ -623,7 +623,7 @@ _cpg_verify_all_domains() {
 
   # Collect failure info BEFORE cleanup
   if ! $all_pass; then
-    display+="\n[Proxy Guard] 错误：以下域名出口不在 $EXPECTED_COUNTRY，请检查代理规则\n"
+    display+="\n[Proxy Guard] 以下域名出口不在 $EXPECTED_COUNTRY，Claude 流量可能暴露真实 IP:\n"
     for domain in "${_cpg_cf_domains[@]}" "statsigapi.net"; do
       local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
       [[ ! -f "$rfile" ]] && continue
@@ -703,7 +703,9 @@ _cpg_run_checks() {
   # Verification failed: block, but show hints
   if [[ $check_passed -ne 0 ]]; then
     echo ""
-    echo "[Proxy Guard] 提示: --guard-status 状态 | --guard-reset 配置 | --guard-update 更新 | --guard-version 版本"
+    echo "[Proxy Guard] ✗ 代理验证未通过，Claude Code 启动已阻止"
+    echo "[Proxy Guard]   请检查代理是否连接到 $EXPECTED_COUNTRY 节点，修复后重试"
+    echo "[Proxy Guard]   --guard-status 查看详情 | --guard-reset 重新配置"
     return 1
   fi
 
@@ -719,7 +721,7 @@ _cpg_run_checks() {
     return $?
   elif [[ $confirm_result -eq 2 ]]; then
     # User wants to quit
-    echo "[Proxy Guard] 已取消"
+    echo "[Proxy Guard] 已取消，Claude Code 未启动"
     return 1
   fi
 
@@ -755,7 +757,7 @@ claude() {
 
   _cpg_run_checks || return 1
 
-  echo "[Proxy Guard] 全部通过，启动 Claude Code..."
+  echo "[Proxy Guard] ✓ 代理验证通过 (出口: $EXPECTED_COUNTRY)，启动 Claude Code..."
   echo ""
 
   command claude "$@"
