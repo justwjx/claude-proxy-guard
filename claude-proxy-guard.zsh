@@ -660,6 +660,7 @@ _cpg_run_checks() {
   [[ "$1" == "--force" ]] && force=true
   [[ "$1" == "--status" ]] && { force=true; status_only=true; }
 
+  echo "[Proxy Guard] v$_CPG_VERSION"
   _cpg_load_config || return 1
   _cpg_check_proxy_process || return 1
 
