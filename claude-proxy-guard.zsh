@@ -166,6 +166,227 @@ _cpg_network_precheck() {
 }
 
 # ============================================================================
+# Per-Domain Exit IP Verification (Task 6)
+# ============================================================================
+
+# Cloudflare domains (verified via /cdn-cgi/trace)
+_cpg_cf_domains=(
+  api.anthropic.com
+  anthropic.com
+  claude.ai
+  claude.com
+  platform.claude.com
+  mcp-proxy.anthropic.com
+  clau.de
+  www.claudeusercontent.com
+)
+
+# IATA codes per country for L2 fallback
+typeset -A _cpg_iata_codes
+_cpg_iata_codes=(
+  JP "NRT KIX"
+  US "LAX SFO SEA ORD IAD EWR ATL DFW MIA"
+  SG "SIN"
+  HK "HKG"
+)
+
+# China mainland GKE regions (for statsigapi.net rejection)
+_cpg_china_gke_regions="gke-asia-east2"
+
+_cpg_verify_cf_domain() {
+  local domain="$1"
+  local expected="$EXPECTED_COUNTRY"
+  local result_file="$_cpg_cache_dir/tmp_${domain//\./_}"
+
+  # L1: /cdn-cgi/trace
+  local trace
+  trace=$(curl -s --connect-timeout 5 "https://$domain/cdn-cgi/trace" 2>/dev/null)
+
+  if [[ -n "$trace" ]] && echo "$trace" | grep -q "^loc="; then
+    local ip=$(echo "$trace" | grep "^ip=" | cut -d= -f2)
+    local loc=$(echo "$trace" | grep "^loc=" | cut -d= -f2)
+    local colo=$(echo "$trace" | grep "^colo=" | cut -d= -f2)
+
+    if [[ "$loc" == "$expected" ]]; then
+      echo "PASS|$domain|$ip|$loc/$colo" > "$result_file"
+      return 0
+    else
+      echo "FAIL|$domain|$ip|$loc/$colo" > "$result_file"
+      return 1
+    fi
+  fi
+
+  # L2: cf-ray header (strip \r from HTTP CRLF)
+  local headers
+  headers=$(curl -sI --connect-timeout 5 "https://$domain" 2>/dev/null)
+  local cf_ray=$(echo "$headers" | tr -d '\r' | grep -i "^cf-ray:" | sed 's/.*-\([A-Z]*\).*/\1/')
+
+  if [[ -n "$cf_ray" ]]; then
+    local valid_codes="${_cpg_iata_codes[$expected]}"
+    if [[ -n "$valid_codes" ]] && echo "$valid_codes" | grep -qw "$cf_ray"; then
+      echo "PASS|$domain|cf-ray|$expected/$cf_ray~" > "$result_file"
+      return 0
+    else
+      echo "FAIL|$domain|cf-ray|??/$cf_ray" > "$result_file"
+      return 1
+    fi
+  fi
+
+  # L3: defer to shared ipinfo.io result (checked once in orchestrator)
+  echo "DEFER|$domain|L3|pending" > "$result_file"
+  return 1
+}
+
+_cpg_verify_statsig() {
+  local result_file="$_cpg_cache_dir/tmp_statsigapi_net"
+  local headers
+  headers=$(curl -sI --connect-timeout 5 "https://statsigapi.net" 2>/dev/null)
+  local region=$(echo "$headers" | grep -i "^x-statsig-region:" | awk '{print $2}' | tr -d '\r')
+
+  if [[ -z "$region" ]]; then
+    echo "FAIL|statsigapi.net|no-region|N/A" > "$result_file"
+    return 1
+  fi
+
+  if echo "$_cpg_china_gke_regions" | grep -qw "$region"; then
+    echo "FAIL|statsigapi.net|$region|CN" > "$result_file"
+    return 1
+  fi
+
+  echo "PASS|statsigapi.net|$region|ok" > "$result_file"
+  return 0
+}
+
+_cpg_verify_all_domains() {
+  rm -f "$_cpg_cache_dir"/tmp_* 2>/dev/null
+  mkdir -p "$_cpg_cache_dir"
+
+  # Launch all checks in parallel
+  for domain in "${_cpg_cf_domains[@]}"; do
+    _cpg_verify_cf_domain "$domain" &
+  done
+  _cpg_verify_statsig &
+  wait
+
+  # Collect results
+  local all_pass=true
+
+  echo "[Proxy Guard] 出口验证:"
+
+  for domain in "${_cpg_cf_domains[@]}"; do
+    local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
+    if [[ -f "$rfile" ]]; then
+      local line=$(cat "$rfile")
+      local status=$(echo "$line" | cut -d'|' -f1)
+      local dname=$(echo "$line" | cut -d'|' -f2)
+      local ip=$(echo "$line" | cut -d'|' -f3)
+      local geo=$(echo "$line" | cut -d'|' -f4)
+
+      if [[ "$status" == "PASS" ]]; then
+        printf "  %-30s %-20s %s ✓\n" "$dname" "$ip" "$geo"
+      elif [[ "$status" != "DEFER" ]]; then
+        printf "  %-30s %-20s %s ✗\n" "$dname" "$ip" "$geo"
+        all_pass=false
+      fi
+    else
+      printf "  %-30s %-20s %s ✗\n" "$domain" "error" "N/A"
+      all_pass=false
+    fi
+  done
+
+  # statsigapi.net
+  local rfile="$_cpg_cache_dir/tmp_statsigapi_net"
+  if [[ -f "$rfile" ]]; then
+    local line=$(cat "$rfile")
+    local status=$(echo "$line" | cut -d'|' -f1)
+    local region=$(echo "$line" | cut -d'|' -f3)
+    if [[ "$status" == "PASS" ]]; then
+      printf "  %-30s %-20s %s ✓\n" "statsigapi.net" "$region" "ok"
+    else
+      printf "  %-30s %-20s %s ✗\n" "statsigapi.net" "$region" "fail"
+      all_pass=false
+    fi
+  fi
+
+  # downloads.claude.ai (covered by claude.ai)
+  local claude_ai_file="$_cpg_cache_dir/tmp_claude_ai"
+  if [[ -f "$claude_ai_file" ]]; then
+    local claude_ai_status=$(cat "$claude_ai_file" | cut -d'|' -f1)
+    if [[ "$claude_ai_status" == "PASS" ]]; then
+      printf "  %-30s %-20s %s ✓\n" "downloads.claude.ai" "(由 claude.ai 覆盖)" ""
+    else
+      printf "  %-30s %-20s %s ✗\n" "downloads.claude.ai" "(claude.ai 失败)" ""
+      all_pass=false
+    fi
+  fi
+
+  # L3 fallback: if any domains deferred, run ipinfo.io ONCE
+  local has_deferred=false
+  for domain in "${_cpg_cf_domains[@]}"; do
+    local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
+    [[ -f "$rfile" ]] && grep -q "^DEFER" "$rfile" && has_deferred=true && break
+  done
+
+  if $has_deferred && [[ "$FALLBACK_ENABLED" == "true" ]]; then
+    local ipinfo
+    ipinfo=$(curl -s --connect-timeout 5 "https://ipinfo.io/json" 2>/dev/null)
+    local l3_country=$(echo "$ipinfo" | grep '"country"' | cut -d'"' -f4)
+    local l3_ip=$(echo "$ipinfo" | grep '"ip"' | cut -d'"' -f4)
+    local l3_pass=false
+    [[ "$l3_country" == "$EXPECTED_COUNTRY" ]] && l3_pass=true
+
+    for domain in "${_cpg_cf_domains[@]}"; do
+      local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
+      if [[ -f "$rfile" ]] && grep -q "^DEFER" "$rfile"; then
+        if $l3_pass; then
+          echo "PASS|$domain|$l3_ip|$l3_country/ipinfo~" > "$rfile"
+          printf "  %-30s %-20s %s ✓\n" "$domain" "$l3_ip" "$l3_country/ipinfo~"
+        else
+          echo "FAIL|$domain|$l3_ip|$l3_country/ipinfo" > "$rfile"
+          printf "  %-30s %-20s %s ✗\n" "$domain" "$l3_ip" "$l3_country/ipinfo"
+          all_pass=false
+        fi
+      fi
+    done
+  elif $has_deferred; then
+    for domain in "${_cpg_cf_domains[@]}"; do
+      local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
+      if [[ -f "$rfile" ]] && grep -q "^DEFER" "$rfile"; then
+        printf "  %-30s %-20s %s ✗\n" "$domain" "no-trace" "N/A"
+        all_pass=false
+      fi
+    done
+  fi
+
+  # Collect failure info BEFORE cleanup
+  local failures=""
+  if ! $all_pass; then
+    for domain in "${_cpg_cf_domains[@]}" "statsigapi.net"; do
+      local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
+      [[ ! -f "$rfile" ]] && continue
+      local line=$(cat "$rfile")
+      local status=$(echo "$line" | cut -d'|' -f1)
+      if [[ "$status" == "FAIL" ]]; then
+        local geo=$(echo "$line" | cut -d'|' -f4)
+        failures="$failures\n  $domain → $geo (期望 $EXPECTED_COUNTRY)"
+      fi
+    done
+  fi
+
+  # Clean up tmp files
+  rm -f "$_cpg_cache_dir"/tmp_* 2>/dev/null
+
+  if $all_pass; then
+    return 0
+  else
+    echo ""
+    echo "[Proxy Guard] 错误：以下域名出口不在 $EXPECTED_COUNTRY，请检查代理规则"
+    echo "$failures"
+    return 1
+  fi
+}
+
+# ============================================================================
 # Run Checks (Stub for Task 7)
 # ============================================================================
 
