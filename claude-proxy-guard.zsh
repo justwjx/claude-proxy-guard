@@ -1,9 +1,9 @@
 #!/usr/bin/env zsh
-# Claude Proxy Guard v1.0
+# Claude Proxy Guard v1.1
 # Verifies proxy is active and Claude traffic exits from expected country
 
 # ============================================================================
-# Config Loading + First-Run Setup (Task 2)
+# Config Loading + First-Run Setup
 # ============================================================================
 
 _cpg_load_config() {
@@ -17,6 +17,8 @@ _cpg_load_config() {
   PROXY_TOOL=$(grep '^PROXY_TOOL=' "$config_file" | cut -d= -f2)
   EXPECTED_COUNTRY=$(grep '^EXPECTED_COUNTRY=' "$config_file" | cut -d= -f2)
   FALLBACK_ENABLED=$(grep '^FALLBACK_ENABLED=' "$config_file" | cut -d= -f2)
+  DOMESTIC_IP_ENABLED=$(grep '^DOMESTIC_IP_ENABLED=' "$config_file" | cut -d= -f2)
+  DOMESTIC_IP_ENABLED="${DOMESTIC_IP_ENABLED:-false}"
 
   if [[ ! "$EXPECTED_COUNTRY" =~ ^[A-Z]{2}$ ]]; then
     echo "[Proxy Guard] 错误：EXPECTED_COUNTRY=\"$EXPECTED_COUNTRY\" 格式非法（需要 2 位大写字母，如 JP）"
@@ -67,6 +69,16 @@ _cpg_first_run_setup() {
   local fallback_enabled="false"
   [[ "$fallback_choice" == "y" || "$fallback_choice" == "Y" ]] && fallback_enabled="true"
 
+  echo ""
+  echo "[可选] 是否启用国内出口 IP 显示？"
+  echo "  需要在代理规则中添加一条："
+  echo "    Surge:  DOMAIN,myip.ipip.net,DIRECT"
+  echo "    Clash:  - DOMAIN,myip.ipip.net,DIRECT"
+  local domestic_choice
+  read "domestic_choice?添加后输入 y，跳过输入 n [n]: "
+  local domestic_ip_enabled="false"
+  [[ "$domestic_choice" == "y" || "$domestic_choice" == "Y" ]] && domestic_ip_enabled="true"
+
   cat > "$config_file" <<EOF
 # Claude Proxy Guard 配置
 # 代理工具：surge | clash | both（both = 任一在跑即可，OR 逻辑）
@@ -77,6 +89,9 @@ EXPECTED_COUNTRY=$country
 
 # fallback 验证是否已启用（用户已在代理规则中添加 ipinfo.io 路由）
 FALLBACK_ENABLED=$fallback_enabled
+
+# 国内出口 IP 显示（需要 DOMAIN,myip.ipip.net,DIRECT 规则）
+DOMESTIC_IP_ENABLED=$domestic_ip_enabled
 EOF
 
   chmod 600 "$config_file"
@@ -85,7 +100,7 @@ EOF
 }
 
 # ============================================================================
-# Proxy Process Detection (Task 3)
+# Proxy Process Detection
 # ============================================================================
 
 _cpg_check_proxy_process() {
@@ -123,41 +138,71 @@ _cpg_check_proxy_process() {
 }
 
 # ============================================================================
-# Cache Logic (Task 4)
+# Local + Domestic IP Info
 # ============================================================================
 
-_cpg_cache_dir="$HOME/.cache/claude-proxy-guard"
+_cpg_show_local_info() {
+  echo "[Proxy Guard] 本机信息:"
 
-_cpg_cache_valid() {
-  local cache_file="$_cpg_cache_dir/result"
-  [[ ! -f "$cache_file" ]] && return 1
+  # LAN IP
+  local lan_ip=$(ipconfig getifaddr en0 2>/dev/null)
+  [[ -z "$lan_ip" ]] && lan_ip=$(ipconfig getifaddr en1 2>/dev/null)
+  [[ -z "$lan_ip" ]] && lan_ip="未知"
+  printf "  局域网 IP:   %s\n" "$lan_ip"
 
-  local cached_ts=$(grep '^_CPG_TIMESTAMP=' "$cache_file" | cut -d= -f2)
-  local cached_pids=$(grep '^_CPG_PROXY_PIDS=' "$cache_file" | cut -d= -f2)
-  local cached_result=$(grep '^_CPG_RESULT=' "$cache_file" | cut -d= -f2)
-
-  local now=$(date +%s)
-  local age=$(( now - ${cached_ts:-0} ))
-  (( age >= 300 )) && return 1
-  [[ "$cached_pids" != "$CPG_PROXY_PIDS" ]] && return 1
-  [[ "$cached_result" != "PASS" ]] && return 1
-
-  return 0
-}
-
-_cpg_cache_write() {
-  local result="$1"
-  mkdir -p "$_cpg_cache_dir"
-  cat > "$_cpg_cache_dir/result" <<EOF
-_CPG_TIMESTAMP=$(date +%s)
-_CPG_PROXY_PIDS=$CPG_PROXY_PIDS
-_CPG_RESULT=$result
-EOF
-  chmod 600 "$_cpg_cache_dir/result"
+  # Domestic IP (requires DIRECT rule for myip.ipip.net)
+  if [[ "$DOMESTIC_IP_ENABLED" == "true" ]]; then
+    local domestic_raw
+    domestic_raw=$(curl -s --connect-timeout 3 "https://myip.ipip.net" 2>/dev/null)
+    if [[ -n "$domestic_raw" ]]; then
+      # Format: "当前 IP：x.x.x.x  来自于：中国 上海 电信"
+      local domestic_ip=$(echo "$domestic_raw" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+      local domestic_loc=$(echo "$domestic_raw" | sed 's/.*来自于：//' | tr -d '\n')
+      printf "  国内出口 IP: %s (%s)\n" "$domestic_ip" "$domestic_loc"
+    else
+      printf "  国内出口 IP: (获取失败)\n"
+    fi
+  else
+    printf "  国内出口 IP: (未启用，运行 claude --guard-reset 配置)\n"
+  fi
 }
 
 # ============================================================================
-# Network Pre-Check (Task 5)
+# Proxy Config DIRECT Rule Check
+# ============================================================================
+
+_cpg_check_direct_rule() {
+  local domain="$1"
+  local found=false
+
+  # Scan Surge profiles
+  local surge_dir="$HOME/Library/Application Support/Surge/Profiles"
+  if [[ -d "$surge_dir" ]]; then
+    if grep -rql "DOMAIN.*${domain}.*DIRECT" "$surge_dir" 2>/dev/null; then
+      found=true
+    fi
+  fi
+
+  # Scan Clash Verge configs
+  local clash_dir="$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev"
+  if [[ -d "$clash_dir" ]] && ! $found; then
+    if grep -rql "${domain}.*DIRECT\|${domain}" "$clash_dir"/*.yaml 2>/dev/null; then
+      found=true
+    fi
+  fi
+
+  if ! $found && [[ "$DOMESTIC_IP_ENABLED" == "true" ]]; then
+    echo ""
+    echo "[Proxy Guard] 提示：未在代理配置中找到 $domain 的 DIRECT 规则"
+    echo "[Proxy Guard] 请在当前活跃的配置中添加："
+    echo "  Surge:  DOMAIN,$domain,DIRECT"
+    echo "  Clash:  - DOMAIN,$domain,DIRECT"
+    echo ""
+  fi
+}
+
+# ============================================================================
+# Network Pre-Check
 # ============================================================================
 
 _cpg_network_precheck() {
@@ -169,7 +214,66 @@ _cpg_network_precheck() {
 }
 
 # ============================================================================
-# Per-Domain Exit IP Verification (Task 6)
+# Cache Logic (reworked: cache results, always display + confirm)
+# ============================================================================
+
+_cpg_cache_dir="$HOME/.cache/claude-proxy-guard"
+
+_cpg_cache_valid() {
+  local cache_file="$_cpg_cache_dir/result"
+  local display_file="$_cpg_cache_dir/display"
+  [[ ! -f "$cache_file" ]] && return 1
+  [[ ! -f "$display_file" ]] && return 1
+
+  local cached_ts=$(grep '^_CPG_TIMESTAMP=' "$cache_file" | cut -d= -f2)
+  local cached_pids=$(grep '^_CPG_PROXY_PIDS=' "$cache_file" | cut -d= -f2)
+  local cached_result=$(grep '^_CPG_RESULT=' "$cache_file" | cut -d= -f2)
+
+  local now=$(date +%s)
+  local age=$(( now - ${cached_ts:-0} ))
+  (( age >= 300 )) && return 1
+  [[ "$cached_pids" != "$CPG_PROXY_PIDS" ]] && return 1
+  [[ "$cached_result" != "PASS" ]] && return 1
+
+  # Export cache age for display
+  CPG_CACHE_AGE_MIN=$(( age / 60 ))
+  CPG_CACHE_AGE_SEC=$(( age % 60 ))
+  return 0
+}
+
+_cpg_cache_write() {
+  local result="$1"
+  local display="$2"
+  mkdir -p "$_cpg_cache_dir"
+  cat > "$_cpg_cache_dir/result" <<EOF
+_CPG_TIMESTAMP=$(date +%s)
+_CPG_PROXY_PIDS=$CPG_PROXY_PIDS
+_CPG_RESULT=$result
+EOF
+  chmod 600 "$_cpg_cache_dir/result"
+
+  # Save display output for cache reuse
+  echo "$display" > "$_cpg_cache_dir/display"
+  chmod 600 "$_cpg_cache_dir/display"
+}
+
+# ============================================================================
+# User Confirmation
+# ============================================================================
+
+_cpg_user_confirm() {
+  local confirm
+  echo ""
+  read "confirm?[Proxy Guard] Enter 继续 / n 重新检测 / q 退出: "
+  case "$confirm" in
+    n|N) return 1 ;;   # re-check
+    q|Q) return 2 ;;   # abort
+    *)   return 0 ;;   # proceed
+  esac
+}
+
+# ============================================================================
+# Per-Domain Exit IP Verification
 # ============================================================================
 
 # Cloudflare domains (verified via /cdn-cgi/trace)
@@ -235,7 +339,7 @@ _cpg_verify_cf_domain() {
     fi
   fi
 
-  # L3: defer to shared ipinfo.io result (checked once in orchestrator)
+  # L3: defer to shared ipinfo.io result
   echo "DEFER|$domain|L3|pending" > "$result_file"
   return 1
 }
@@ -271,10 +375,11 @@ _cpg_verify_all_domains() {
   _cpg_verify_statsig &
   wait
 
-  # Collect results
+  # Collect results into display buffer
   local all_pass=true
+  local display=""
 
-  echo "[Proxy Guard] 出口验证:"
+  display+="[Proxy Guard] 代理出口验证:\n"
 
   for domain in "${_cpg_cf_domains[@]}"; do
     local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
@@ -286,13 +391,13 @@ _cpg_verify_all_domains() {
       local geo=$(echo "$line" | cut -d'|' -f4)
 
       if [[ "$rstatus" == "PASS" ]]; then
-        printf "  %-30s %-20s %s ✓\n" "$dname" "$ip" "$geo"
+        display+="$(printf "  %-30s %-20s %s ✓" "$dname" "$ip" "$geo")\n"
       elif [[ "$rstatus" != "DEFER" ]]; then
-        printf "  %-30s %-20s %s ✗\n" "$dname" "$ip" "$geo"
+        display+="$(printf "  %-30s %-20s %s ✗" "$dname" "$ip" "$geo")\n"
         all_pass=false
       fi
     else
-      printf "  %-30s %-20s %s ✗\n" "$domain" "error" "N/A"
+      display+="$(printf "  %-30s %-20s %s ✗" "$domain" "error" "N/A")\n"
       all_pass=false
     fi
   done
@@ -304,9 +409,9 @@ _cpg_verify_all_domains() {
     local rstatus=$(echo "$line" | cut -d'|' -f1)
     local region=$(echo "$line" | cut -d'|' -f3)
     if [[ "$rstatus" == "PASS" ]]; then
-      printf "  %-30s %-20s %s ✓\n" "statsigapi.net" "$region" "ok"
+      display+="$(printf "  %-30s %-20s %s ✓" "statsigapi.net" "$region" "ok")\n"
     else
-      printf "  %-30s %-20s %s ✗\n" "statsigapi.net" "$region" "fail"
+      display+="$(printf "  %-30s %-20s %s ✗" "statsigapi.net" "$region" "fail")\n"
       all_pass=false
     fi
   fi
@@ -331,10 +436,10 @@ _cpg_verify_all_domains() {
       if [[ -f "$rfile" ]] && grep -q "^DEFER" "$rfile"; then
         if $l3_pass; then
           echo "PASS|$domain|$l3_ip|$l3_country/ipinfo~" > "$rfile"
-          printf "  %-30s %-20s %s ✓\n" "$domain" "$l3_ip" "$l3_country/ipinfo~"
+          display+="$(printf "  %-30s %-20s %s ✓" "$domain" "$l3_ip" "$l3_country/ipinfo~")\n"
         else
           echo "FAIL|$domain|$l3_ip|$l3_country/ipinfo" > "$rfile"
-          printf "  %-30s %-20s %s ✗\n" "$domain" "$l3_ip" "$l3_country/ipinfo"
+          display+="$(printf "  %-30s %-20s %s ✗" "$domain" "$l3_ip" "$l3_country/ipinfo")\n"
           all_pass=false
         fi
       fi
@@ -343,7 +448,7 @@ _cpg_verify_all_domains() {
     for domain in "${_cpg_cf_domains[@]}"; do
       local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
       if [[ -f "$rfile" ]] && grep -q "^DEFER" "$rfile"; then
-        printf "  %-30s %-20s %s ✗\n" "$domain" "no-trace" "N/A"
+        display+="$(printf "  %-30s %-20s %s ✗" "$domain" "no-trace" "N/A")\n"
         all_pass=false
       fi
     done
@@ -352,18 +457,18 @@ _cpg_verify_all_domains() {
   # downloads.claude.ai (covered by claude.ai)
   local claude_ai_file="$_cpg_cache_dir/tmp_claude_ai"
   if [[ -f "$claude_ai_file" ]]; then
-    local claude_ai_status=$(cat "$claude_ai_file" | cut -d'|' -f1)
-    if [[ "$claude_ai_status" == "PASS" ]]; then
-      printf "  %-30s %-20s %s ✓\n" "downloads.claude.ai" "(由 claude.ai 覆盖)" ""
+    local claude_ai_rstatus=$(cat "$claude_ai_file" | cut -d'|' -f1)
+    if [[ "$claude_ai_rstatus" == "PASS" ]]; then
+      display+="$(printf "  %-30s %-20s %s ✓" "downloads.claude.ai" "(由 claude.ai 覆盖)" "")\n"
     else
-      printf "  %-30s %-20s %s ✗\n" "downloads.claude.ai" "(claude.ai 失败)" ""
+      display+="$(printf "  %-30s %-20s %s ✗" "downloads.claude.ai" "(claude.ai 失败)" "")\n"
       all_pass=false
     fi
   fi
 
   # Collect failure info BEFORE cleanup
-  local failures=""
   if ! $all_pass; then
+    display+="\n[Proxy Guard] 错误：以下域名出口不在 $EXPECTED_COUNTRY，请检查代理规则\n"
     for domain in "${_cpg_cf_domains[@]}" "statsigapi.net"; do
       local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
       [[ ! -f "$rfile" ]] && continue
@@ -371,7 +476,7 @@ _cpg_verify_all_domains() {
       local rstatus=$(echo "$line" | cut -d'|' -f1)
       if [[ "$rstatus" == "FAIL" ]]; then
         local geo=$(echo "$line" | cut -d'|' -f4)
-        failures="$failures\n  $domain → $geo (期望 $EXPECTED_COUNTRY)"
+        display+="  $domain → $geo (期望 $EXPECTED_COUNTRY)\n"
       fi
     done
   fi
@@ -379,41 +484,93 @@ _cpg_verify_all_domains() {
   # Clean up tmp files
   rm -f "$_cpg_cache_dir"/tmp_*(N) 2>/dev/null
 
+  # Store display for cache reuse
+  CPG_DISPLAY_OUTPUT="$display"
+
   if $all_pass; then
     return 0
   else
-    echo ""
-    echo "[Proxy Guard] 错误：以下域名出口不在 $EXPECTED_COUNTRY，请检查代理规则"
-    echo "$failures"
     return 1
   fi
 }
 
 # ============================================================================
-# Run Checks (Stub for Task 7)
+# Run Checks (reworked: always show info + confirm)
 # ============================================================================
 
 _cpg_run_checks() {
   local force=false
+  local status_only=false
   [[ "$1" == "--force" ]] && force=true
+  [[ "$1" == "--status" ]] && { force=true; status_only=true; }
 
   _cpg_load_config || return 1
   _cpg_check_proxy_process || return 1
 
-  if ! $force && _cpg_cache_valid; then
-    echo "[Proxy Guard] 缓存有效，跳过验证 ✓"
-    return 0
+  # Show local info (always fresh)
+  _cpg_show_local_info
+
+  # Check domestic IP DIRECT rule
+  if [[ "$DOMESTIC_IP_ENABLED" == "true" ]]; then
+    _cpg_check_direct_rule "myip.ipip.net"
   fi
 
-  _cpg_network_precheck || return 1
-  _cpg_verify_all_domains || return 1
+  local display=""
+  local check_passed=true
 
-  _cpg_cache_write "PASS"
+  if ! $force && _cpg_cache_valid; then
+    # Cache hit: show cached results with age
+    display=$(cat "$_cpg_cache_dir/display")
+    echo ""
+    echo "[Proxy Guard] 代理出口验证 (缓存 ${CPG_CACHE_AGE_MIN}分${CPG_CACHE_AGE_SEC}秒前):"
+    # Strip the header line from cached display, print the rest
+    echo "$display" | tail -n +2
+  else
+    # Cache miss: run full verification
+    _cpg_network_precheck || return 1
+    _cpg_verify_all_domains
+    check_passed=$?
+
+    # Print the display output
+    echo ""
+    echo -e "$CPG_DISPLAY_OUTPUT"
+
+    if [[ $check_passed -eq 0 ]]; then
+      _cpg_cache_write "PASS" "$CPG_DISPLAY_OUTPUT"
+    fi
+  fi
+
+  # Status-only mode: don't ask for confirmation
+  if $status_only; then
+    return $check_passed
+  fi
+
+  # Verification failed: block
+  if [[ $check_passed -ne 0 ]]; then
+    return 1
+  fi
+
+  # User confirmation
+  _cpg_user_confirm
+  local confirm_result=$?
+
+  if [[ $confirm_result -eq 1 ]]; then
+    # User wants re-check: invalidate cache and recurse
+    rm -f "$_cpg_cache_dir/result" "$_cpg_cache_dir/display" 2>/dev/null
+    echo ""
+    _cpg_run_checks --force
+    return $?
+  elif [[ $confirm_result -eq 2 ]]; then
+    # User wants to quit
+    echo "[Proxy Guard] 已取消"
+    return 1
+  fi
+
   return 0
 }
 
 # ============================================================================
-# Main claude() function (Task 1)
+# Main claude() function
 # ============================================================================
 
 claude() {
@@ -423,7 +580,7 @@ claude() {
       return 0
       ;;
     --guard-status)
-      _cpg_run_checks --force
+      _cpg_run_checks --status
       return $?
       ;;
   esac
