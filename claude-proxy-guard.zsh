@@ -49,8 +49,13 @@ _cpg_first_run_setup() {
     *) echo "无效选择"; return 1 ;;
   esac
 
+  echo ""
+  echo "期望出口国家（ISO 3166-1 两位代码）:"
+  echo "  JP=日本  US=美国  SG=新加坡  HK=香港"
+  echo "  KR=韩国  TW=台湾  GB=英国    DE=德国"
+  echo ""
   local country
-  read "country?期望出口国家（默认 JP，直接回车使用默认值）: "
+  read "country?输入代码（默认 JP，直接回车使用默认值）: "
   country="${country:-JP}"
   country="${(U)country}"
 
@@ -463,6 +468,61 @@ _cpg_verify_all_domains() {
     else
       display+="$(printf "  %-30s %-20s %s ✗" "downloads.claude.ai" "(claude.ai 失败)" "")\n"
       all_pass=false
+    fi
+  fi
+
+  # Geo info for unique exit IPs (batch query ip-api.com)
+  local unique_ips=()
+  for domain in "${_cpg_cf_domains[@]}"; do
+    local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
+    [[ ! -f "$rfile" ]] && continue
+    local line=$(cat "$rfile")
+    local rstatus=$(echo "$line" | cut -d'|' -f1)
+    [[ "$rstatus" != "PASS" ]] && continue
+    local ip=$(echo "$line" | cut -d'|' -f3)
+    [[ "$ip" == "cf-ray" ]] && continue
+    # Deduplicate
+    local already=false
+    for existing in "${unique_ips[@]}"; do
+      [[ "$existing" == "$ip" ]] && already=true && break
+    done
+    $already || unique_ips+=("$ip")
+  done
+
+  if (( ${#unique_ips[@]} > 0 )); then
+    # Build JSON array for batch query
+    local batch_json="["
+    local first=true
+    for ip in "${unique_ips[@]}"; do
+      $first || batch_json+=","
+      batch_json+="{\"query\":\"$ip\"}"
+      first=false
+    done
+    batch_json+="]"
+
+    local geo_result
+    geo_result=$(curl -s --connect-timeout 5 \
+      "http://ip-api.com/batch?lang=zh-CN&fields=query,country,regionName,city,isp" \
+      -X POST -d "$batch_json" 2>/dev/null)
+
+    if [[ -n "$geo_result" ]] && echo "$geo_result" | grep -q '"query"'; then
+      display+="[Proxy Guard] 出口 IP 地理信息:\n"
+      for ip in "${unique_ips[@]}"; do
+        # Extract fields for this IP from batch result
+        # Use simple grep since jq may not be available
+        local entry=$(echo "$geo_result" | tr '}' '\n' | grep "\"$ip\"")
+        local gcountry=$(echo "$entry" | grep -o '"country":"[^"]*"' | cut -d'"' -f4)
+        local gregion=$(echo "$entry" | grep -o '"regionName":"[^"]*"' | cut -d'"' -f4)
+        local gcity=$(echo "$entry" | grep -o '"city":"[^"]*"' | cut -d'"' -f4)
+        local gisp=$(echo "$entry" | grep -o '"isp":"[^"]*"' | cut -d'"' -f4)
+
+        local ip_display="$ip"
+        # Truncate long IPv6 for display
+        if (( ${#ip_display} > 20 )); then
+          ip_display="${ip_display:0:17}..."
+        fi
+        display+="$(printf "  %-22s → %s %s %s / %s" "$ip_display" "$gcountry" "$gregion" "$gcity" "$gisp")\n"
+      done
     fi
   fi
 
