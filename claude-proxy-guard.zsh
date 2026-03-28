@@ -67,8 +67,8 @@ _cpg_first_run_setup() {
   echo ""
   echo "[可选] 是否启用 fallback 验证？"
   echo "  需要在代理规则中添加一条："
-  echo "    Surge:  DOMAIN,ipinfo.io,<你的Claude策略组名>"
-  echo "    Clash:  - DOMAIN,ipinfo.io,<你的Claude策略组名>"
+  echo "    Surge:  DOMAIN,ip-api.com,<你的Claude策略组名>"
+  echo "    Clash:  - DOMAIN,ip-api.com,<你的Claude策略组名>"
   local fallback_choice
   read "fallback_choice?添加后输入 y，跳过输入 n [n]: "
   local fallback_enabled="false"
@@ -92,7 +92,7 @@ PROXY_TOOL=$proxy_tool
 # 期望的出口国家代码（ISO 3166-1 alpha-2，如 JP、US、SG）
 EXPECTED_COUNTRY=$country
 
-# fallback 验证是否已启用（用户已在代理规则中添加 ipinfo.io 路由）
+# fallback 验证是否已启用（用户已在代理规则中添加 ip-api.com 路由）
 FALLBACK_ENABLED=$fallback_enabled
 
 # 国内出口 IP 显示（需要 DOMAIN,myip.ipip.net,DIRECT 规则）
@@ -345,7 +345,7 @@ _cpg_verify_cf_domain() {
     fi
   fi
 
-  # L3: defer to shared ipinfo.io result
+  # L3: defer to shared ip-api.com result
   echo "DEFER|$domain|L3|pending" > "$result_file"
   return 1
 }
@@ -422,7 +422,7 @@ _cpg_verify_all_domains() {
     fi
   fi
 
-  # L3 fallback: if any domains deferred, run ipinfo.io ONCE
+  # L3 fallback: if any domains deferred, run ip-api.com ONCE
   local has_deferred=false
   for domain in "${_cpg_cf_domains[@]}"; do
     local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"

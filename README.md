@@ -82,8 +82,8 @@ DOMAIN-SUFFIX,clau.de,<策略组>
 # Claude Proxy Guard - 国内 IP 检测
 DOMAIN,myip.ipip.net,DIRECT
 
-# [可选] 降级验证 - 将 ipinfo.io 路由到与 Claude 相同的策略组：
-# DOMAIN,ipinfo.io,<策略组>
+# [可选] 降级验证 - 将 ip-api.com 路由到与 Claude 相同的策略组：
+# DOMAIN,ip-api.com,<策略组>
 ```
 
 **Clash Verge：**
@@ -92,8 +92,8 @@ DOMAIN,myip.ipip.net,DIRECT
 # Claude Proxy Guard - 国内 IP 检测
 - DOMAIN,myip.ipip.net,DIRECT
 
-# [可选] 降级验证 - 将 ipinfo.io 路由到与 Claude 相同的策略组：
-# - DOMAIN,ipinfo.io,<策略组>
+# [可选] 降级验证 - 将 ip-api.com 路由到与 Claude 相同的策略组：
+# - DOMAIN,ip-api.com,<策略组>
 ```
 
 #### 快速参考
@@ -106,7 +106,7 @@ DOMAIN,myip.ipip.net,DIRECT
 | `DOMAIN-SUFFIX,claudeusercontent.com,<策略组>` | 用户内容 | 必须 |
 | `DOMAIN-SUFFIX,clau.de,<策略组>` | 短链接 | 必须 |
 | `DOMAIN,myip.ipip.net,DIRECT` | 显示国内出口 IP | 推荐 |
-| `DOMAIN,ipinfo.io,<策略组>` | 降级验证 | 可选 |
+| `DOMAIN,ip-api.com,<策略组>` | 降级验证 | 可选 |
 
 ### 工作原理
 
@@ -138,7 +138,7 @@ DOMAIN,myip.ipip.net,DIRECT
 |------|------|------|
 | L1 | `/cdn-cgi/trace` | 精确（出口 IP + 国家） |
 | L2 | `cf-ray` 响应头 | 近似（机房 IATA 码） |
-| L3 | `ipinfo.io` | 单点检测（需添加代理规则） |
+| L3 | `ip-api.com` | 单点检测（需添加代理规则） |
 
 ### 命令
 
@@ -243,14 +243,14 @@ DOMAIN-SUFFIX,clau.de,<policy>
 
 ```ini
 DOMAIN,myip.ipip.net,DIRECT
-# (Optional) DOMAIN,ipinfo.io,<policy>
+# (Optional) DOMAIN,ip-api.com,<policy>
 ```
 
 **Clash Verge:**
 
 ```yaml
 - DOMAIN,myip.ipip.net,DIRECT
-# (Optional) - DOMAIN,ipinfo.io,<policy>
+# (Optional) - DOMAIN,ip-api.com,<policy>
 ```
 
 #### Quick Reference
@@ -263,7 +263,7 @@ DOMAIN,myip.ipip.net,DIRECT
 | `DOMAIN-SUFFIX,claudeusercontent.com,<policy>` | User content | Required |
 | `DOMAIN-SUFFIX,clau.de,<policy>` | Short links | Required |
 | `DOMAIN,myip.ipip.net,DIRECT` | Show domestic exit IP | Recommended |
-| `DOMAIN,ipinfo.io,<policy>` | Fallback verification | Optional |
+| `DOMAIN,ip-api.com,<policy>` | Fallback verification | Optional |
 
 ### How It Works
 
@@ -293,7 +293,7 @@ DOMAIN,myip.ipip.net,DIRECT
 |-------|--------|-----------|
 | L1 | `/cdn-cgi/trace` | Exact (exit IP + country) |
 | L2 | `cf-ray` header | Approximate (datacenter IATA code) |
-| L3 | `ipinfo.io` | Single-point (requires proxy rule) |
+| L3 | `ip-api.com` | Single-point (requires proxy rule) |
 
 ### Commands
 
