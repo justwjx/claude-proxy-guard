@@ -14,7 +14,9 @@ _cpg_load_config() {
     [[ ! -f "$config_file" ]] && return 1
   fi
 
-  source "$config_file"
+  PROXY_TOOL=$(grep '^PROXY_TOOL=' "$config_file" | cut -d= -f2)
+  EXPECTED_COUNTRY=$(grep '^EXPECTED_COUNTRY=' "$config_file" | cut -d= -f2)
+  FALLBACK_ENABLED=$(grep '^FALLBACK_ENABLED=' "$config_file" | cut -d= -f2)
 
   if [[ ! "$EXPECTED_COUNTRY" =~ ^[A-Z]{2}$ ]]; then
     echo "[Proxy Guard] 错误：EXPECTED_COUNTRY=\"$EXPECTED_COUNTRY\" 格式非法（需要 2 位大写字母，如 JP）"
@@ -130,14 +132,15 @@ _cpg_cache_valid() {
   local cache_file="$_cpg_cache_dir/result"
   [[ ! -f "$cache_file" ]] && return 1
 
-  source "$cache_file"
+  local cached_ts=$(grep '^_CPG_TIMESTAMP=' "$cache_file" | cut -d= -f2)
+  local cached_pids=$(grep '^_CPG_PROXY_PIDS=' "$cache_file" | cut -d= -f2)
+  local cached_result=$(grep '^_CPG_RESULT=' "$cache_file" | cut -d= -f2)
 
   local now=$(date +%s)
-  local age=$(( now - ${TIMESTAMP:-0} ))
+  local age=$(( now - ${cached_ts:-0} ))
   (( age >= 300 )) && return 1
-
-  [[ "$PROXY_PIDS" != "$CPG_PROXY_PIDS" ]] && return 1
-  [[ "$RESULT" != "PASS" ]] && return 1
+  [[ "$cached_pids" != "$CPG_PROXY_PIDS" ]] && return 1
+  [[ "$cached_result" != "PASS" ]] && return 1
 
   return 0
 }
@@ -146,9 +149,9 @@ _cpg_cache_write() {
   local result="$1"
   mkdir -p "$_cpg_cache_dir"
   cat > "$_cpg_cache_dir/result" <<EOF
-TIMESTAMP=$(date +%s)
-PROXY_PIDS=$CPG_PROXY_PIDS
-RESULT=$result
+_CPG_TIMESTAMP=$(date +%s)
+_CPG_PROXY_PIDS=$CPG_PROXY_PIDS
+_CPG_RESULT=$result
 EOF
   chmod 600 "$_cpg_cache_dir/result"
 }
@@ -308,18 +311,6 @@ _cpg_verify_all_domains() {
     fi
   fi
 
-  # downloads.claude.ai (covered by claude.ai)
-  local claude_ai_file="$_cpg_cache_dir/tmp_claude_ai"
-  if [[ -f "$claude_ai_file" ]]; then
-    local claude_ai_status=$(cat "$claude_ai_file" | cut -d'|' -f1)
-    if [[ "$claude_ai_status" == "PASS" ]]; then
-      printf "  %-30s %-20s %s ✓\n" "downloads.claude.ai" "(由 claude.ai 覆盖)" ""
-    else
-      printf "  %-30s %-20s %s ✗\n" "downloads.claude.ai" "(claude.ai 失败)" ""
-      all_pass=false
-    fi
-  fi
-
   # L3 fallback: if any domains deferred, run ipinfo.io ONCE
   local has_deferred=false
   for domain in "${_cpg_cf_domains[@]}"; do
@@ -356,6 +347,18 @@ _cpg_verify_all_domains() {
         all_pass=false
       fi
     done
+  fi
+
+  # downloads.claude.ai (covered by claude.ai)
+  local claude_ai_file="$_cpg_cache_dir/tmp_claude_ai"
+  if [[ -f "$claude_ai_file" ]]; then
+    local claude_ai_status=$(cat "$claude_ai_file" | cut -d'|' -f1)
+    if [[ "$claude_ai_status" == "PASS" ]]; then
+      printf "  %-30s %-20s %s ✓\n" "downloads.claude.ai" "(由 claude.ai 覆盖)" ""
+    else
+      printf "  %-30s %-20s %s ✗\n" "downloads.claude.ai" "(claude.ai 失败)" ""
+      all_pass=false
+    fi
   fi
 
   # Collect failure info BEFORE cleanup
