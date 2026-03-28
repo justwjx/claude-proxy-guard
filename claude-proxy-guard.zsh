@@ -4,7 +4,7 @@
 
 _CPG_VERSION="1.1.0"
 _CPG_REPO="justwjx/claude-proxy-guard"
-_CPG_RAW_URL="https://raw.githubusercontent.com/$_CPG_REPO/master"
+_CPG_RAW_URL="https://raw.githubusercontent.com/$_CPG_REPO/refs/heads/master"
 
 # ============================================================================
 # Version + Update
