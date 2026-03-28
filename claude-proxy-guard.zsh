@@ -362,8 +362,9 @@ EOF
 _cpg_user_confirm() {
   local confirm
   echo ""
+  echo "[Proxy Guard] ✓ 代理验证通过，所有域名出口均为 $EXPECTED_COUNTRY"
   echo "[Proxy Guard] 提示: --guard-status 状态 | --guard-reset 配置 | --guard-update 更新 | --guard-version 版本"
-  read "confirm?[Proxy Guard] Enter 继续 / n 重新检测 / q 退出: "
+  read "confirm?[Proxy Guard] Enter 启动 Claude Code / n 重新检测 / q 退出: "
   case "$confirm" in
     n|N) return 1 ;;   # re-check
     q|Q) return 2 ;;   # abort
