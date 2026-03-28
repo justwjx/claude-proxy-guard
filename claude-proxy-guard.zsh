@@ -606,8 +606,10 @@ _cpg_run_checks() {
     return $check_passed
   fi
 
-  # Verification failed: block
+  # Verification failed: block, but show hints
   if [[ $check_passed -ne 0 ]]; then
+    echo ""
+    echo "[Proxy Guard] 提示: --guard-status 查看状态 | --guard-reset 重新配置"
     return 1
   fi
 
