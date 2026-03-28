@@ -2,7 +2,7 @@
 # Claude Proxy Guard
 # Verifies proxy is active and Claude traffic exits from expected country
 
-_CPG_VERSION="1.2.0"
+_CPG_VERSION="1.2.1"
 _CPG_REPO="justwjx/claude-proxy-guard"
 _CPG_RAW_URL="https://raw.githubusercontent.com/$_CPG_REPO/refs/heads/master"
 
