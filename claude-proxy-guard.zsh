@@ -269,6 +269,7 @@ EOF
 _cpg_user_confirm() {
   local confirm
   echo ""
+  echo "[Proxy Guard] 提示: --guard-status 查看状态 | --guard-reset 重新配置"
   read "confirm?[Proxy Guard] Enter 继续 / n 重新检测 / q 退出: "
   case "$confirm" in
     n|N) return 1 ;;   # re-check
