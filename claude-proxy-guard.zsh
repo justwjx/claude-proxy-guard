@@ -312,7 +312,7 @@ _cpg_network_precheck() {
 }
 
 # ============================================================================
-# Cache Logic (reworked: cache results, always display + confirm)
+# Cache Logic
 # ============================================================================
 
 _cpg_cache_dir="$HOME/.cache/claude-proxy-guard"
@@ -650,7 +650,7 @@ _cpg_verify_all_domains() {
 }
 
 # ============================================================================
-# Run Checks (reworked: always show info + confirm)
+# Run Checks
 # ============================================================================
 
 _cpg_run_checks() {
