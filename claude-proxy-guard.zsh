@@ -403,9 +403,9 @@ _cpg_run_checks() {
   fi
 
   _cpg_network_precheck || return 1
+  _cpg_verify_all_domains || return 1
 
-  # Domain verification will be added in Task 6
-  echo "[Proxy Guard] 域名验证待实现..."
+  _cpg_cache_write "PASS"
   return 0
 }
 
