@@ -2,7 +2,7 @@
 # Claude Proxy Guard
 # Verifies proxy is active and Claude traffic exits from expected country
 
-_CPG_VERSION="1.2.1"
+_CPG_VERSION="1.2.2"
 _CPG_REPO="justwjx/claude-proxy-guard"
 _CPG_RAW_URL="https://raw.githubusercontent.com/$_CPG_REPO/refs/heads/master"
 
@@ -62,28 +62,31 @@ _cpg_do_update() {
 
   echo "[Proxy Guard] 安装目录: $install_dir"
 
-  # Fetch and check remote version
-  local remote_version
-  remote_version=$(curl -s --connect-timeout 5 "$_CPG_RAW_URL/VERSION" 2>/dev/null | tr -d '[:space:]')
-
-  if [[ -z "$remote_version" ]] || [[ ! "$remote_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "[Proxy Guard] 无法获取远程版本号"
+  # Pull first, then compare versions (avoids GitHub CDN cache issues)
+  echo "[Proxy Guard] 拉取最新代码..."
+  if ! (cd "$install_dir" && git pull origin master); then
+    echo "[Proxy Guard] git pull 失败"
     return 1
   fi
 
-  if [[ "$remote_version" == "$_CPG_VERSION" ]]; then
+  # Read version from pulled repo
+  local repo_version
+  repo_version=$(cat "$install_dir/VERSION" 2>/dev/null | tr -d '[:space:]')
+
+  if [[ -z "$repo_version" ]]; then
+    echo "[Proxy Guard] 无法读取版本号"
+    return 1
+  fi
+
+  if [[ "$repo_version" == "$_CPG_VERSION" ]]; then
     echo "[Proxy Guard] 已是最新版本 v$_CPG_VERSION"
     return 0
   fi
 
-  echo "[Proxy Guard] v$_CPG_VERSION → v$remote_version"
+  echo "[Proxy Guard] v$_CPG_VERSION → v$repo_version"
 
-  # Pull and reinstall
-  (
-    cd "$install_dir" &&
-    git pull origin master &&
-    ./install.sh
-  )
+  # Reinstall
+  (cd "$install_dir" && ./install.sh)
 
   if [[ $? -eq 0 ]]; then
     echo ""
