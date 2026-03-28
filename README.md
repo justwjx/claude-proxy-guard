@@ -13,7 +13,7 @@
 ```
 [Proxy Guard] Surge 运行中 (PID: 12345) ✓
 [Proxy Guard] 本机信息:
-  局域网 IP:   192.168.1.100
+  局域网 IP:   192.168.1.x
   国内出口 IP: 203.x.x.x (中国 某省 某市 运营商)
 [Proxy Guard] 代理出口验证:
   api.anthropic.com         xx.xx.xx.xx    JP/NRT ✓
@@ -21,7 +21,7 @@
   ...（10 个域名）
 [Proxy Guard] 出口 IP 地理信息:
   xx.xx.xx.xx              → 日本 东京都 / ISP名称
-[Proxy Guard] 提示: --guard-status 查看状态 | --guard-reset 重新配置
+[Proxy Guard] 提示: --guard-status 状态 | --guard-reset 配置 | --guard-update 更新 | --guard-version 版本
 [Proxy Guard] Enter 继续 / n 重新检测 / q 退出:
 ```
 
@@ -173,6 +173,16 @@ DOMAIN,myip.ipip.net,DIRECT
 - zsh（macOS 默认 shell）
 - [Surge](https://nssurge.com/) 或 [Clash Verge Rev](https://github.com/clash-verge-rev/clash-verge-rev)
 
+### 兼容性
+
+| 系统 | 状态 |
+|------|------|
+| macOS Ventura 13+ | 已测试 |
+| macOS Sonoma 14+ | 已测试 |
+| macOS Sequoia 15+ | 已测试 |
+| Apple Silicon (M 系列) | 已测试 |
+| Intel x86_64 | 已测试 |
+
 ---
 
 <a id="english"></a>
@@ -184,7 +194,7 @@ Checks that your proxy is active and all Claude-related traffic exits from the e
 ```
 [Proxy Guard] Surge running (PID: 12345) ✓
 [Proxy Guard] Local info:
-  LAN IP:      192.168.1.100
+  LAN IP:      192.168.1.x
   Domestic IP: 203.x.x.x (China, Province, City, ISP)
 [Proxy Guard] Proxy exit verification:
   api.anthropic.com         xx.xx.xx.xx    JP/NRT ✓
@@ -192,7 +202,7 @@ Checks that your proxy is active and all Claude-related traffic exits from the e
   ... (10 domains)
 [Proxy Guard] Exit IP geo info:
   xx.xx.xx.xx              → Japan, Tokyo / ISP Name
-[Proxy Guard] Hint: --guard-status check status | --guard-reset reconfigure
+[Proxy Guard] Hint: --guard-status status | --guard-reset config | --guard-update update | --guard-version version
 [Proxy Guard] Enter to continue / n to re-check / q to quit:
 ```
 
@@ -330,3 +340,13 @@ Results cached for 5 minutes. Auto-invalidates when time expires or proxy PID ch
 - macOS
 - zsh (default on macOS)
 - [Surge](https://nssurge.com/) or [Clash Verge Rev](https://github.com/clash-verge-rev/clash-verge-rev)
+
+### Compatibility
+
+| System | Status |
+|--------|--------|
+| macOS Ventura 13+ | Tested |
+| macOS Sonoma 14+ | Tested |
+| macOS Sequoia 15+ | Tested |
+| Apple Silicon (M-series) | Tested |
+| Intel x86_64 | Tested |
