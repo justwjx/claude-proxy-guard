@@ -430,10 +430,10 @@ _cpg_verify_all_domains() {
   done
 
   if $has_deferred && [[ "$FALLBACK_ENABLED" == "true" ]]; then
-    local ipinfo
-    ipinfo=$(curl -s --connect-timeout 5 "https://ipinfo.io/json" 2>/dev/null)
-    local l3_country=$(echo "$ipinfo" | grep '"country"' | cut -d'"' -f4)
-    local l3_ip=$(echo "$ipinfo" | grep '"ip"' | cut -d'"' -f4)
+    local l3_result
+    l3_result=$(curl -s --connect-timeout 5 "http://ip-api.com/json?fields=query,countryCode" 2>/dev/null)
+    local l3_country=$(echo "$l3_result" | grep -o '"countryCode":"[^"]*"' | cut -d'"' -f4)
+    local l3_ip=$(echo "$l3_result" | grep -o '"query":"[^"]*"' | cut -d'"' -f4)
     local l3_pass=false
     [[ "$l3_country" == "$EXPECTED_COUNTRY" ]] && l3_pass=true
 
@@ -441,11 +441,11 @@ _cpg_verify_all_domains() {
       local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
       if [[ -f "$rfile" ]] && grep -q "^DEFER" "$rfile"; then
         if $l3_pass; then
-          echo "PASS|$domain|$l3_ip|$l3_country/ipinfo~" > "$rfile"
-          display+="$(printf "  %-30s %-20s %s ✓" "$domain" "$l3_ip" "$l3_country/ipinfo~")\n"
+          echo "PASS|$domain|$l3_ip|$l3_country/fallback~" > "$rfile"
+          display+="$(printf "  %-30s %-20s %s ✓" "$domain" "$l3_ip" "$l3_country/fallback~")\n"
         else
-          echo "FAIL|$domain|$l3_ip|$l3_country/ipinfo" > "$rfile"
-          display+="$(printf "  %-30s %-20s %s ✗" "$domain" "$l3_ip" "$l3_country/ipinfo")\n"
+          echo "FAIL|$domain|$l3_ip|$l3_country/fallback" > "$rfile"
+          display+="$(printf "  %-30s %-20s %s ✗" "$domain" "$l3_ip" "$l3_country/fallback")\n"
           all_pass=false
         fi
       fi
@@ -454,6 +454,7 @@ _cpg_verify_all_domains() {
     for domain in "${_cpg_cf_domains[@]}"; do
       local rfile="$_cpg_cache_dir/tmp_${domain//\./_}"
       if [[ -f "$rfile" ]] && grep -q "^DEFER" "$rfile"; then
+        echo "FAIL|$domain|no-trace|N/A" > "$rfile"
         display+="$(printf "  %-30s %-20s %s ✗" "$domain" "no-trace" "N/A")\n"
         all_pass=false
       fi
